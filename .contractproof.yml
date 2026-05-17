@@ -1,0 +1,198 @@
+# ContractProof Configuration File
+# This file configures how ContractProof analyzes your codebase for API drift
+
+version: 1
+
+# Severity threshold for blocking PRs/builds
+# Options: critical, high, medium, low
+# - critical: Only block on critical issues
+# - high: Block on critical and high severity issues (recommended)
+# - medium: Block on critical, high, and medium severity issues
+# - low: Block on any severity issues
+severity_threshold: high
+
+# Patterns to ignore during analysis
+ignore_patterns:
+  # Test files
+  - "**/*.test.ts"
+  - "**/*.test.js"
+  - "**/*.spec.ts"
+  - "**/*.spec.js"
+  - "**/tests/**"
+  - "**/__tests__/**"
+  
+  # Dependencies
+  - "**/node_modules/**"
+  - "**/vendor/**"
+  - "**/dist/**"
+  - "**/build/**"
+  
+  # Generated files
+  - "**/*.generated.ts"
+  - "**/*.generated.js"
+  - "**/generated/**"
+  
+  # Documentation
+  - "**/*.md"
+  - "**/docs/**"
+
+# Framework detection configuration
+frameworks:
+  # Backend frameworks to detect
+  backend:
+    - express
+    - fastify
+    - nestjs
+    - nextjs
+    - koa
+    - hapi
+    
+  # Frontend frameworks to detect
+  frontend:
+    - react
+    - vue
+    - angular
+    - svelte
+    - axios
+    - fetch
+
+# Analysis configuration
+analysis:
+  # Enable/disable specific analyzers
+  enabled_analyzers:
+    - backend
+    - frontend
+    - drift_detection
+    - contract_validation
+  
+  # Maximum file size to analyze (in KB)
+  max_file_size: 500
+  
+  # Parallel processing
+  parallel: true
+  max_workers: 4
+  
+  # Cache analysis results
+  cache_enabled: true
+  cache_ttl: 3600  # seconds
+
+# Notification settings
+notifications:
+  # Slack webhook URL (optional)
+  # Set via environment variable: SLACK_WEBHOOK_URL
+  slack:
+    enabled: false
+    webhook_url: ${SLACK_WEBHOOK_URL}
+    channel: "#api-drift-alerts"
+    mention_on_critical: true
+    mention_users:
+      - "@tech-lead"
+  
+  # Discord webhook URL (optional)
+  # Set via environment variable: DISCORD_WEBHOOK_URL
+  discord:
+    enabled: false
+    webhook_url: ${DISCORD_WEBHOOK_URL}
+    mention_on_critical: true
+  
+  # Email notifications (optional)
+  email:
+    enabled: false
+    smtp_host: ${SMTP_HOST}
+    smtp_port: 587
+    smtp_user: ${SMTP_USER}
+    smtp_password: ${SMTP_PASSWORD}
+    from: "contractproof@example.com"
+    to:
+      - "team@example.com"
+
+# GitHub integration settings
+github:
+  # Post findings as PR comments
+  pr_comments: true
+  
+  # Create status checks
+  status_checks: true
+  
+  # Annotate files with inline comments
+  file_annotations: true
+  
+  # Auto-label PRs based on findings
+  auto_label: true
+  labels:
+    critical: "⚠️ api-drift-critical"
+    high: "🔴 api-drift-high"
+    medium: "🟡 api-drift-medium"
+    low: "🔵 api-drift-low"
+    clean: "✅ no-drift"
+
+# Auto-fix configuration
+auto_fix:
+  # Enable auto-fix suggestions
+  enabled: true
+  
+  # Auto-fix specific issue types
+  fix_types:
+    - missing_error_handling
+    - inconsistent_status_codes
+    - missing_validation
+  
+  # Create fix commits automatically (requires write permissions)
+  auto_commit: false
+  commit_message: "fix: auto-fix API drift issues [ContractProof]"
+
+# Reporting configuration
+reporting:
+  # Output format for CLI
+  # Options: json, markdown, html, text
+  format: json
+  
+  # Include code snippets in reports
+  include_snippets: true
+  
+  # Maximum snippet lines
+  snippet_lines: 10
+  
+  # Generate detailed reports
+  detailed: true
+  
+  # Save reports to file
+  save_to_file: true
+  output_path: ".contractproof-reports"
+
+# Custom rules (advanced)
+custom_rules:
+  # Define custom drift detection rules
+  - name: "enforce_api_versioning"
+    pattern: "/api/v\\d+/"
+    severity: high
+    message: "API endpoints should include version prefix"
+  
+  - name: "require_auth_middleware"
+    pattern: "app\\.(get|post|put|delete)\\(['\"].*['\"],"
+    severity: medium
+    message: "Protected endpoints should use authentication middleware"
+
+# Performance tuning
+performance:
+  # Timeout for analysis (seconds)
+  timeout: 300
+  
+  # Memory limit (MB)
+  memory_limit: 2048
+  
+  # Enable incremental analysis (only changed files)
+  incremental: true
+
+# Experimental features
+experimental:
+  # AI-powered fix suggestions
+  ai_suggestions: false
+  
+  # Predictive drift detection
+  predictive_analysis: false
+  
+  # Cross-repository analysis
+  cross_repo_analysis: false
+
+# Made with Bob

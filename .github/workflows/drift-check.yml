@@ -1,0 +1,289 @@
+name: ContractProof Drift Check
+
+on:
+  pull_request:
+    branches: [main, master, develop]
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+    inputs:
+      severity_threshold:
+        description: 'Minimum severity to fail the check'
+        required: false
+        default: 'high'
+        type: choice
+        options:
+          - critical
+          - high
+          - medium
+          - low
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+  statuses: write
+
+jobs:
+  drift-analysis:
+    name: API Drift Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for better analysis
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Cache ContractProof analysis
+        uses: actions/cache@v4
+        with:
+          path: |
+            .contractproof-cache
+            node_modules
+          key: contractproof-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}-${{ hashFiles('**/*.ts', '**/*.js', '**/*.tsx', '**/*.jsx') }}
+          restore-keys: |
+            contractproof-${{ runner.os }}-${{ hashFiles('**/package-lock.json') }}-
+            contractproof-${{ runner.os }}-
+
+      - name: Install ContractProof
+        run: |
+          npm install -g contractproof@latest || echo "Installing from local..."
+          # Fallback to local installation if package not published
+          if ! command -v contractproof &> /dev/null; then
+            npm install
+            npm link
+          fi
+
+      - name: Load configuration
+        id: config
+        run: |
+          if [ -f .contractproof.yml ]; then
+            echo "config_exists=true" >> $GITHUB_OUTPUT
+            # Parse severity threshold from config
+            THRESHOLD=$(grep 'severity_threshold:' .contractproof.yml | awk '{print $2}' || echo "high")
+            echo "severity_threshold=$THRESHOLD" >> $GITHUB_OUTPUT
+          else
+            echo "config_exists=false" >> $GITHUB_OUTPUT
+            echo "severity_threshold=${{ github.event.inputs.severity_threshold || 'high' }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Run ContractProof Analysis
+        id: analysis
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CONTRACTPROOF_SEVERITY: ${{ steps.config.outputs.severity_threshold }}
+        run: |
+          if [ "${{ github.event_name }}" == "pull_request" ]; then
+            contractproof check --pr ${{ github.event.pull_request.number }} --format json > analysis-results.json
+          else
+            contractproof analyze . --format json > analysis-results.json
+          fi
+          
+          # Extract summary for output
+          CRITICAL=$(jq '.summary.critical // 0' analysis-results.json)
+          HIGH=$(jq '.summary.high // 0' analysis-results.json)
+          MEDIUM=$(jq '.summary.medium // 0' analysis-results.json)
+          LOW=$(jq '.summary.low // 0' analysis-results.json)
+          
+          echo "critical=$CRITICAL" >> $GITHUB_OUTPUT
+          echo "high=$HIGH" >> $GITHUB_OUTPUT
+          echo "medium=$MEDIUM" >> $GITHUB_OUTPUT
+          echo "low=$LOW" >> $GITHUB_OUTPUT
+          
+          # Determine if check should fail
+          THRESHOLD="${{ steps.config.outputs.severity_threshold }}"
+          SHOULD_FAIL=false
+          
+          case $THRESHOLD in
+            critical)
+              [ $CRITICAL -gt 0 ] && SHOULD_FAIL=true
+              ;;
+            high)
+              [ $CRITICAL -gt 0 ] || [ $HIGH -gt 0 ] && SHOULD_FAIL=true
+              ;;
+            medium)
+              [ $CRITICAL -gt 0 ] || [ $HIGH -gt 0 ] || [ $MEDIUM -gt 0 ] && SHOULD_FAIL=true
+              ;;
+            low)
+              [ $CRITICAL -gt 0 ] || [ $HIGH -gt 0 ] || [ $MEDIUM -gt 0 ] || [ $LOW -gt 0 ] && SHOULD_FAIL=true
+              ;;
+          esac
+          
+          echo "should_fail=$SHOULD_FAIL" >> $GITHUB_OUTPUT
+
+      - name: Upload analysis results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: contractproof-analysis
+          path: analysis-results.json
+          retention-days: 30
+
+      - name: Post PR Comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            const results = JSON.parse(fs.readFileSync('analysis-results.json', 'utf8'));
+            
+            // Generate comment body
+            const critical = ${{ steps.analysis.outputs.critical }};
+            const high = ${{ steps.analysis.outputs.high }};
+            const medium = ${{ steps.analysis.outputs.medium }};
+            const low = ${{ steps.analysis.outputs.low }};
+            
+            const severityEmoji = {
+              critical: '🔴',
+              high: '🟠',
+              medium: '🟡',
+              low: '🔵'
+            };
+            
+            let body = `## 🔍 ContractProof API Drift Analysis\n\n`;
+            body += `### Summary\n\n`;
+            body += `| Severity | Count |\n`;
+            body += `|----------|-------|\n`;
+            body += `| ${severityEmoji.critical} Critical | ${critical} |\n`;
+            body += `| ${severityEmoji.high} High | ${high} |\n`;
+            body += `| ${severityEmoji.medium} Medium | ${medium} |\n`;
+            body += `| ${severityEmoji.low} Low | ${low} |\n\n`;
+            
+            if (results.findings && results.findings.length > 0) {
+              body += `### 📋 Findings\n\n`;
+              
+              // Group by severity
+              const grouped = results.findings.reduce((acc, finding) => {
+                acc[finding.severity] = acc[finding.severity] || [];
+                acc[finding.severity].push(finding);
+                return acc;
+              }, {});
+              
+              for (const severity of ['critical', 'high', 'medium', 'low']) {
+                const findings = grouped[severity] || [];
+                if (findings.length > 0) {
+                  body += `<details>\n<summary>${severityEmoji[severity]} ${severity.toUpperCase()} (${findings.length})</summary>\n\n`;
+                  
+                  findings.forEach((finding, idx) => {
+                    body += `#### ${idx + 1}. ${finding.title}\n\n`;
+                    body += `**Type:** ${finding.type}\n\n`;
+                    body += `**Location:** \`${finding.file}:${finding.line}\`\n\n`;
+                    body += `**Description:** ${finding.description}\n\n`;
+                    
+                    if (finding.suggestion) {
+                      body += `**💡 Suggestion:** ${finding.suggestion}\n\n`;
+                    }
+                    
+                    if (finding.codeSnippet) {
+                      body += `\`\`\`${finding.language || 'typescript'}\n${finding.codeSnippet}\n\`\`\`\n\n`;
+                    }
+                    
+                    body += `---\n\n`;
+                  });
+                  
+                  body += `</details>\n\n`;
+                }
+              }
+            } else {
+              body += `✅ No API drift detected! Your contracts are in sync.\n\n`;
+            }
+            
+            body += `\n---\n`;
+            body += `*Powered by [ContractProof](https://github.com/contractproof) | `;
+            body += `Threshold: \`${{ steps.config.outputs.severity_threshold }}\` | `;
+            body += `[View Full Report](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})*`;
+            
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const botComment = comments.find(comment => 
+              comment.user.type === 'Bot' && 
+              comment.body.includes('ContractProof API Drift Analysis')
+            );
+            
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
+
+      - name: Create Status Check
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const shouldFail = '${{ steps.analysis.outputs.should_fail }}' === 'true';
+            const critical = ${{ steps.analysis.outputs.critical }};
+            const high = ${{ steps.analysis.outputs.high }};
+            const medium = ${{ steps.analysis.outputs.medium }};
+            const low = ${{ steps.analysis.outputs.low }};
+            
+            const state = shouldFail ? 'failure' : 'success';
+            const description = shouldFail 
+              ? `Found ${critical} critical, ${high} high, ${medium} medium, ${low} low severity issues`
+              : `No blocking issues found (${critical + high + medium + low} total findings)`;
+            
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: state,
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: description,
+              context: 'ContractProof / API Drift Check'
+            });
+
+      - name: Send Slack Notification
+        if: always() && steps.config.outputs.config_exists == 'true'
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          if [ -n "$SLACK_WEBHOOK" ]; then
+            contractproof notify slack \
+              --webhook "$SLACK_WEBHOOK" \
+              --results analysis-results.json \
+              --pr ${{ github.event.pull_request.number || 'N/A' }}
+          fi
+
+      - name: Fail if threshold exceeded
+        if: steps.analysis.outputs.should_fail == 'true'
+        run: |
+          echo "::error::API drift detected above threshold (${{ steps.config.outputs.severity_threshold }})"
+          echo "Critical: ${{ steps.analysis.outputs.critical }}"
+          echo "High: ${{ steps.analysis.outputs.high }}"
+          echo "Medium: ${{ steps.analysis.outputs.medium }}"
+          echo "Low: ${{ steps.analysis.outputs.low }}"
+          exit 1
+
+      - name: Success Summary
+        if: steps.analysis.outputs.should_fail == 'false'
+        run: |
+          echo "✅ ContractProof check passed!"
+          echo "Total findings: $((${{ steps.analysis.outputs.critical }} + ${{ steps.analysis.outputs.high }} + ${{ steps.analysis.outputs.medium }} + ${{ steps.analysis.outputs.low }}))"
+          echo "Threshold: ${{ steps.config.outputs.severity_threshold }}"
+
+# Made with Bob
