@@ -62,29 +62,45 @@ program
 
       // Get all files
       spinner.text = "Scanning files...";
-      const files = await analyzer.getAllFiles(localPath);
+      const files = await analyzer.getRepositoryFiles(localPath);
       spinner.succeed(chalk.green(`Found ${files.length} files`));
 
       // Analyze backend
       spinner.start("Analyzing backend APIs...");
       const backendAnalyzer = new RealBackendAnalyzer();
-      const backendResults = await backendAnalyzer.analyzeFiles(files);
-      spinner.succeed(chalk.green(`Found ${backendResults.endpoints.length} backend endpoints`));
+      const backendEndpoints = files.flatMap(f => backendAnalyzer.analyzeFile(f.content, f.path));
+      spinner.succeed(chalk.green(`Found ${backendEndpoints.length} backend endpoints`));
 
       // Analyze frontend
       spinner.start("Analyzing frontend API calls...");
       const frontendAnalyzer = new RealFrontendAnalyzer();
-      const frontendResults = await frontendAnalyzer.analyzeFiles(files);
-      spinner.succeed(chalk.green(`Found ${frontendResults.apiCalls.length} frontend API calls`));
+      const frontendEndpoints = files.flatMap(f => frontendAnalyzer.analyzeFile(f.content, f.path));
+      spinner.succeed(chalk.green(`Found ${frontendEndpoints.length} frontend API calls`));
 
       // Detect drift
       spinner.start("Detecting API drift...");
       const driftDetector = new RealDriftDetector();
-      const driftResults = driftDetector.detectDrift(backendResults, frontendResults);
+      const findings = driftDetector.detectDrift(backendEndpoints, frontendEndpoints, [], []);
+      const driftResults = {
+        findings: findings.map(f => ({ ...f, type: f.title?.split(':')[0] || 'drift', file: f.backend?.location.file || f.frontend?.[0]?.location.file || '', line: f.backend?.location.line || f.frontend?.[0]?.location.line || 0 })),
+        summary: {
+          total: findings.length,
+          critical: findings.filter(f => f.severity === 'critical').length,
+          high: findings.filter(f => f.severity === 'high').length,
+          medium: findings.filter(f => f.severity === 'medium').length,
+          low: findings.filter(f => f.severity === 'low').length,
+        },
+        metadata: {
+          analyzedFiles: files.length,
+          backendEndpoints: backendEndpoints.length,
+          frontendCalls: frontendEndpoints.length,
+          timestamp: new Date().toISOString(),
+        },
+      };
       
-      const totalIssues = driftResults.findings.length;
-      const criticalCount = driftResults.findings.filter(f => f.severity === "critical").length;
-      const highCount = driftResults.findings.filter(f => f.severity === "high").length;
+      const totalIssues = findings.length;
+      const criticalCount = findings.filter(f => f.severity === "critical").length;
+      const highCount = findings.filter(f => f.severity === "high").length;
       
       if (totalIssues === 0) {
         spinner.succeed(chalk.green("✅ No API drift detected!"));
@@ -182,9 +198,25 @@ program
       const frontendAnalyzer = new RealFrontendAnalyzer();
       const driftDetector = new RealDriftDetector();
 
-      const backendResults = await backendAnalyzer.analyzeFiles(files);
-      const frontendResults = await frontendAnalyzer.analyzeFiles(files);
-      const driftResults = driftDetector.detectDrift(backendResults, frontendResults);
+      const backendEndpoints = files.flatMap(f => backendAnalyzer.analyzeFile(f.content, f.path));
+      const frontendEndpoints = files.flatMap(f => frontendAnalyzer.analyzeFile(f.content, f.path));
+      const driftFindings = driftDetector.detectDrift(backendEndpoints, frontendEndpoints, [], []);
+      const driftResults = {
+        findings: driftFindings.map(f => ({ ...f, type: f.title?.split(':')[0] || 'drift', file: f.backend?.location.file || f.frontend?.[0]?.location.file || '', line: f.backend?.location.line || f.frontend?.[0]?.location.line || 0 })),
+        summary: {
+          total: driftFindings.length,
+          critical: driftFindings.filter(f => f.severity === 'critical').length,
+          high: driftFindings.filter(f => f.severity === 'high').length,
+          medium: driftFindings.filter(f => f.severity === 'medium').length,
+          low: driftFindings.filter(f => f.severity === 'low').length,
+        },
+        metadata: {
+          analyzedFiles: files.length,
+          backendEndpoints: backendEndpoints.length,
+          frontendCalls: frontendEndpoints.length,
+          timestamp: new Date().toISOString(),
+        },
+      };
 
       spinner.succeed(chalk.green("Analysis complete"));
 
