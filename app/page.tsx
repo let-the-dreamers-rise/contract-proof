@@ -68,64 +68,6 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Key Metrics Section */}
-      <section className="container mx-auto px-4 py-16 bg-white/50 dark:bg-gray-900/50">
-        <div className="max-w-6xl mx-auto">
-          <div className="text-center mb-12">
-            <h3 className="text-3xl font-bold mb-4">Proven Results</h3>
-            <p className="text-xl text-muted-foreground">
-              Real metrics from teams using ContractProof
-            </p>
-          </div>
-
-          <div className="grid md:grid-cols-4 gap-6 mb-8">
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border shadow-lg text-center">
-              <div className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent mb-2">
-                87%
-              </div>
-              <div className="text-sm font-medium text-muted-foreground">
-                Production API Failures Prevented
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border shadow-lg text-center">
-              <div className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent mb-2">
-                94%
-              </div>
-              <div className="text-sm font-medium text-muted-foreground">
-                Faster Incident Response Time
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border shadow-lg text-center">
-              <div className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent mb-2">
-                $127K
-              </div>
-              <div className="text-sm font-medium text-muted-foreground">
-                Average Annual Savings (10-person team)
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-gray-800 rounded-xl p-6 border shadow-lg text-center">
-              <div className="text-4xl font-bold bg-gradient-to-r from-purple-600 to-blue-600 bg-clip-text text-transparent mb-2">
-                2.3 weeks
-              </div>
-              <div className="text-sm font-medium text-muted-foreground">
-                Average Payback Period
-              </div>
-            </div>
-          </div>
-
-          <div className="text-center">
-            <Link
-              href="/roi"
-              className="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg font-semibold hover:shadow-lg transition-all"
-            >
-              Calculate Your ROI →
-            </Link>
-          </div>
-        </div>
-      </section>
 
       {/* Problem Visualization */}
       <section id="problem" className="container mx-auto px-4 py-20">
